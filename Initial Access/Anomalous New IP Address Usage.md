@@ -128,7 +128,7 @@ let detect_anomalous_new_entity_fl = (T: (*), entityColumnName: string, scopeCol
 };
 // === Parameter configuration ===
 let trainPeriodStart = ago(365d); // 365 days ago
-let detectPeriodStart = now() - 1h; // Lookback is set to 1 hour. Adjust this to your desired lookback period, for example change to -30d for the past 30 days.
+let detectPeriodStart = now() - 1d; // Lookback is set to 1 day. Adjust this to your desired lookback period, for example change to -30d for the past 30 days.
 let endDetection = now(); // Dynamic end
 SigninLogs
 | invoke detect_anomalous_new_entity_fl(
