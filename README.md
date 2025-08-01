@@ -26,7 +26,7 @@ For the sake of clarity and organization, the queries within this repository hav
 | Reconnaissance        | [TA0043](https://attack.mitre.org/tactics/TA0043/) |
 | Resource Development  | [TA0042](https://attack.mitre.org/tactics/TA0042/) |
 | [Initial Access](./Initial%20Access/)        | [TA0001](https://attack.mitre.org/tactics/TA0001/) |
-| Execution             | [TA0002](https://attack.mitre.org/tactics/TA0002/) |
+| [Execution](./Execution/)            | [TA0002](https://attack.mitre.org/tactics/TA0002/) |
 | Persistence           | [TA0003](https://attack.mitre.org/tactics/TA0003/) |
 | [Privilege Escalation](./Privilege%20Escalation/)  | [TA0004](https://attack.mitre.org/tactics/TA0004/) |
 | [Defense Evasion](./Defense%20Evasion/)       | [TA0005](https://attack.mitre.org/tactics/TA0005/) |
