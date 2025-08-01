@@ -1,99 +1,70 @@
-# Suspicious Spike in Failed AWS API Calls by Non-ASIA Access Key
+# Previously Unseen AWS CloudShell CLI Activity
 
 ### Description
 
-This detection triggers when a non-ASIA AWS access key performs an abnormally high number of failed API calls to sensitive services, deviating from its typical behavior over the past two weeks. This may indicate misuse of credentials, unauthorized automation, or reconnaissance activity.
+This detection triggers when an AWS CloudShell command deviates from the IAM user’s typical behavior over the past two weeks. A positive match strongly suggests that the alerted entity may be compromised, potentially granting an attacker unauthorized CLI access within the AWS environment
 
 ### Microsoft Sentinel
 ```
 let lookback = 14d;
-let cutoff = now();
-let bintime = 1h;
-let AWSNonASIAKeyFilteringFunction = view () {
+let cutoff = 1h;
+let AWSCloudTrailFuncAggregation = view () {
     AWSCloudTrail
-    | where EventName matches regex @"(? i)^(Describe|Export|Get|List|Create|Put|Update|Modify|Attach|Add|Delete|Remo ve|Detach|Disable|Revoke|Stop|Run|Invoke|Start|Launch|Execute|Switch)"
-    | where EventName matches regex @"(? i)Secret|Policy|Key|Token|Credential|Password|Encrypt|Decrypt|Assume|Trail|S napshot|ACL|Security|Group|Bucket|Object"
-    | where isnotempty(UserIdentityAccessKeyId)
-    | where isnotempty(UserIdentityArn)
-    | extend AccessKeyIDPrefix = tostring(extract(@"^([A-Z]{4})", 1, UserIdentityAccessKeyId))
-    | where AccessKeyIDPrefix != "ASIA"
+    | where UserAgent has_any ("aws-cli", "cloudshell")
+    | where UserIdentityType == "IAMUser"
+    | where EventName matches regex @"Describe|Export|Get|List"
+    | where isnotempty(UserIdentityUserName)
 };
-AWSNonASIAKeyFilteringFunction
-| where TimeGenerated between (ago(lookback) .. cutoff)
-| make-series
-    DistinctDeniedEventCount = count_distinctif(EventName, ErrorCode in ("AccessDenied", "Client.UnauthorizedOperation")),
-    TotalDeniedErrorCount = countif(ErrorCode in ("AccessDenied", "Client.UnauthorizedOperation")),
-    TotalSuccessfulAPICalls = countif(isempty(ErrorCode)),
-    DistinctSuccessfulAPICalls = count_distinctif(EventName, isempty(ErrorCode)),
-    TotalAmountOfAPICalls = count() default = 0
-    on TimeGenerated
-    from ago(lookback) to cutoff step bintime
-    by UserIdentityArn, UserIdentityAccessKeyId
-| extend
-    OutliersScoreDistinctDenied = series_outliers(DistinctDeniedEventCount, "ctukey", int(null), 5, 95),
-    OutliersScoreTotalDenied = series_outliers(TotalDeniedErrorCount, "ctukey", int(null), 5, 95)
-| mv-expand
-    TimeGenerated to typeof (datetime),
-    OutliersScoreDistinctDenied to typeof (real),
-    OutliersScoreTotalDenied to typeof (real),
-    DistinctDeniedEventCount to typeof (real),
-    TotalSuccessfulAPICalls to typeof (real),
-    TotalDeniedErrorCount to typeof (real),
-    DistinctSuccessfulAPICalls to typeof (real),
-    TotalAmountOfAPICalls to typeof (real)
-| where OutliersScoreDistinctDenied > 1
-| where OutliersScoreTotalDenied > 1
-| where DistinctDeniedEventCount >= DistinctSuccessfulAPICalls
-| extend TotalEventErrorRate = TotalDeniedErrorCount / TotalAmountOfAPICalls
-| where TotalEventErrorRate >= 0.5
-| extend
-    BackwardsTimeWindow = TimeGenerated - bintime,
-    ForwardTimeWindow = TimeGenerated + bintime
-| join kind=inner (AWSNonASIAKeyFilteringFunction
-    | where TimeGenerated between (ago(lookback) .. cutoff)
+let EventNameBaseLinePerUser = AWSCloudTrailFuncAggregation
+    | where TimeGenerated between (ago(lookback) .. ago(cutoff))
     | summarize
-        DistinctDeniedEventSet = make_set_if(EventName, ErrorCode in ("AccessDenied", "Client.UnauthorizedOperation")),
-        DistinctSuccessfulEventSet = make_set_if(EventName, isempty(ErrorCode))
-        by bin(TimeGenerated, bintime), UserIdentityArn, UserIdentityAccessKeyId
+        AmountOfSuccessfulCommandsLast14Days = countif(isempty(ErrorCode)),
+        AmountOfUnsuccessfulCommandsLast14Days = countif(isnotempty(ErrorCode)),
+        UniqueSuccessfulCommandsLast14Days = make_set_if(EventName, isempty(ErrorCode)),
+        UniqueUnsuccessfulCommandsLast14Days = make_set_if(EventName, isnotempty(ErrorCode))
+        by UserIdentityUserName
     | extend
-        DistinctDeniedEventSetCount = array_length(DistinctDeniedEventSet),
-        DistinctSuccessfulEventSetCount = array_length(DistinctSuccessfulEventSet))
-    on UserIdentityArn, UserIdentityAccessKeyId
-| where TimeGenerated1 between (BackwardsTimeWindow .. ForwardTimeWindow)
-| where DistinctSuccessfulAPICalls == DistinctSuccessfulEventSetCount
-| where DistinctDeniedEventCount == DistinctDeniedEventSetCount
-| project
-    TimeGenerated,
-    UserIdentityArn,
-    UserIdentityAccessKeyId,
-    TotalAmountOfAPICalls,
-    TotalSuccessfulAPICalls,
-    DistinctSuccessfulAPICalls,
-    TotalEventErrorRate,
-    DistinctDeniedEventSet,
-    DistinctSuccessfulEventSet,
-    OutliersScoreDistinctDenied,
-    OutliersScoreTotalDenied
-| where TimeGenerated between (ago(bintime) .. cutoff)
+        NumberOfUniqueUnsuccessfulCommandsLast14Days = array_length(UniqueUnsuccessfulCommandsLast14Days),
+        NumberOfUniqueSuccessfulCommandsLast14Days = array_length(UniqueSuccessfulCommandsLast14Days)
+    | extend UniqueCommandsLast14Days = set_union(UniqueSuccessfulCommandsLast14Days, UniqueUnsuccessfulCommandsLast14Days)
+    | where AmountOfSuccessfulCommandsLast14Days >= AmountOfUnsuccessfulCommandsLast14Days
+    | where NumberOfUniqueSuccessfulCommandsLast14Days >= NumberOfUniqueUnsuccessfulCommandsLast14Days;
+AWSCloudTrailFuncAggregation
+| where TimeGenerated between (ago(cutoff) .. now())
+| summarize
+    AmountOfSuccessfulCommandsLastHour = countif(isempty(ErrorCode)),
+    AmountOfUnsuccessfulCommandsLastHour = countif(isnotempty(ErrorCode)),
+    UniqueSuccessfulCommandsLastHour = make_set_if(EventName, isempty(ErrorCode)),
+    UniqueUnsuccessfulCommandsLastHour = make_set_if(EventName, isnotempty(ErrorCode)),
+    FirstTimeCommandsExecuted = min(TimeGenerated),
+    LatestTimeCommandsExecuted = max(TimeGenerated)
+    by UserIdentityUserName
+| extend
+    NumberOfUniqueUnsuccessfulCommandsLastHour = array_length(UniqueUnsuccessfulCommandsLastHour),
+    NumberOfUniqueSuccessfulCommandsLastHour = array_length(UniqueSuccessfulCommandsLastHour)
+| extend UniqueCommandsLastHour = set_union(UniqueSuccessfulCommandsLastHour, UniqueUnsuccessfulCommandsLastHour)
+| where AmountOfUnsuccessfulCommandsLastHour >= AmountOfSuccessfulCommandsLastHour
+| where NumberOfUniqueUnsuccessfulCommandsLastHour >= NumberOfUniqueSuccessfulCommandsLastHour
+| lookup EventNameBaseLinePerUser on UserIdentityUserName
+| where AmountOfUnsuccessfulCommandsLastHour >= AmountOfUnsuccessfulCommandsLast14Days or isempty(AmountOfUnsuccessfulCommandsLast14Days)
+| extend PreviouslyUnobservedCommands = set_difference(UniqueCommandsLastHour, UniqueCommandsLast14Days)
+| extend AmountOfPreviouslyUnobservedCommands = array_length(PreviouslyUnobservedCommands)
+| where AmountOfPreviouslyUnobservedCommands > 0
+| extend FirstTimeSeenCommands = array_length(set_intersect(PreviouslyUnobservedCommands, UniqueUnsuccessfulCommandsLastHour)) > 0
+| where FirstTimeSeenCommands
+| project-away *14*, *Last*
 ```
 
 ### MITRE ATT&CK Mapping
-- Tactics: Discovery
-- Technique ID: T1087.004
-- [Account Discovery: Cloud Account](https://attack.mitre.org/techniques/T1087/004/)
-
----
-
-- Tactics: Discovery
-- Technique ID: T1580
-- [Cloud Infrastructure Discovery](https://attack.mitre.org/techniques/T1580/)
+- Tactics: Execution
+- Technique ID: T1651
+- [Cloud Administration Command](https://attack.mitre.org/techniques/T1651/)
 
 ---
 
 - Tactics: Execution
 - Technique ID: T1059.009
 - [Command and Scripting Interpreter: Cloud API](https://attack.mitre.org/techniques/T1059/009/)
-- 
 
 ### Versioning
 | Version       | Date          | Comments                               |
