@@ -83,9 +83,11 @@ AWSNonASIAKeyFilteringFunction
 - [Account Discovery: Cloud Account](https://attack.mitre.org/techniques/T1087/004/)
 
 
+
 - Tactics: Discovery
 - Technique ID: T1580
 - [Cloud Infrastructure Discovery](https://attack.mitre.org/techniques/T1580/)
+
 
 
 - Tactics: Execution
