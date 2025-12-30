@@ -19,7 +19,7 @@ let BruteForceFunction = view () {
         authenticationStepRequirement = tostring(ParsedAuthenticationDetails.[0].authenticationStepRequirement),
         succeeded = tobool(ParsedAuthenticationDetails.[0].succeeded)
     | where authenticationMethod == "Password"
-//    | where authenticationStepRequirement == "Primary authentication"
+//    | where authenticationStepRequirement == "Primary authentication" // Remove the comment from this line in case it applies to your environment
     | evaluate ipv4_lookup(CIDRASN, IPAddress, CIDR, return_unmatched=false)
     | project
         TimeGenerated,
@@ -84,6 +84,7 @@ BruteForceFunction
 | Version       | Date          | Comments                               |
 | ------------- |---------------| ---------------------------------------|
 | 1.0           | 30/09/2025    | Initial publish                        |
+
 
 
 
